@@ -5,7 +5,8 @@
   "description": "Ferramenta modular e segura para automação educacional no OGame baseada em DOM.",
   "permissions": [
     "storage",
-    "alarms"
+    "alarms",
+    "notifications"
   ],
   "host_permissions": [
     "https://*.ogame.gameforge.com/*"

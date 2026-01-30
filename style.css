@@ -253,6 +253,38 @@ input:checked+.slider:before {
     cursor: pointer;
 }
 
+.origin-list-container {
+    background: #0d1117;
+    border: 1px solid #30363d;
+    border-radius: 4px;
+    padding: 8px;
+    max-height: 120px;
+    overflow-y: auto;
+    margin-bottom: 12px;
+}
+
+.origin-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 0;
+    font-size: 0.75rem;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.origin-item:last-child {
+    border-bottom: none;
+}
+
+.origin-item input[type="checkbox"] {
+    cursor: pointer;
+}
+
+.origin-item label {
+    cursor: pointer;
+    flex: 1;
+}
+
 .option-row {
     margin-top: 8px;
     padding-top: 8px;

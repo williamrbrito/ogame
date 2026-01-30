@@ -18,6 +18,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     const expCoords = document.getElementById('exp-coords');
+    const originListContainer = document.getElementById('origin-selection-list');
     const randomSys = document.getElementById('random-system');
     const randomRange = document.getElementById('random-range');
     const autoRecycle = document.getElementById('auto-recycle');
@@ -25,25 +26,62 @@ document.addEventListener('DOMContentLoaded', () => {
     const prodToggle = document.getElementById('production-toggle');
     const resToggle = document.getElementById('research-toggle');
 
+    // Função para renderizar lista de origens
+    const renderOrigins = (detected, selectedStr) => {
+        if (!detected || detected.length === 0) return;
+        originListContainer.innerHTML = '';
+        const selected = selectedStr ? selectedStr.split(',') : [];
+
+        detected.forEach(item => {
+            const div = document.createElement('div');
+            div.className = 'origin-item';
+
+            const checkbox = document.createElement('input');
+            checkbox.type = 'checkbox';
+            checkbox.value = item.id;
+            checkbox.checked = selected.includes(item.id);
+            checkbox.id = `origin-${item.id}`;
+
+            const label = document.createElement('label');
+            label.htmlFor = `origin-${item.id}`;
+            label.textContent = `${item.name} [${item.id.split('[')[0]}]`;
+
+            div.appendChild(checkbox);
+            div.appendChild(label);
+            originListContainer.appendChild(div);
+        });
+    };
+
     // Carregar configurações salvas
-    chrome.storage.local.get('config', (data) => {
-        if (data.config) {
-            const c = data.config;
-            const exp = c.expedition || {};
-            const ships = exp.ships || {};
+    chrome.storage.local.get(['config', 'detectedOrigins'], (data) => {
+        const c = data.config || {};
+        const detected = data.detectedOrigins || [];
+        const exp = c.expedition || {};
+        const ships = exp.ships || {};
 
-            expToggle.checked = exp.enabled || false;
-            shipIds.forEach(id => {
-                if (shipElements[id]) shipElements[id].value = ships[id] || 0;
+        expToggle.checked = exp.enabled || false;
+        shipIds.forEach(id => {
+            if (shipElements[id]) shipElements[id].value = ships[id] || 0;
+        });
+
+        expCoords.value = exp.coords || "";
+        renderOrigins(detected, exp.origins || "");
+
+        randomSys.checked = exp.randomSystem || false;
+        randomRange.value = exp.randomRange || 0;
+        autoRecycle.checked = exp.autoRecycle || false;
+
+        prodToggle.checked = c.production?.enabled || false;
+        resToggle.checked = c.research?.enabled || false;
+    });
+
+    // Escutar mudanças no storage (para atualizar origens se o scan completar com popup aberto)
+    chrome.storage.onChanged.addListener((changes, area) => {
+        if (area === 'local' && changes.detectedOrigins) {
+            chrome.storage.local.get('config', (data) => {
+                const originsStr = data.config?.expedition?.origins || "";
+                renderOrigins(changes.detectedOrigins.newValue, originsStr);
             });
-
-            expCoords.value = exp.coords || "";
-            randomSys.checked = exp.randomSystem || false;
-            randomRange.value = exp.randomRange || 0;
-            autoRecycle.checked = exp.autoRecycle || false;
-
-            prodToggle.checked = c.production?.enabled || false;
-            resToggle.checked = c.research?.enabled || false;
         }
     });
 
@@ -54,11 +92,17 @@ document.addEventListener('DOMContentLoaded', () => {
             ships[id] = parseInt(shipElements[id].value) || 0;
         });
 
+        // Coletar origens selecionadas
+        const selectedOrigins = Array.from(originListContainer.querySelectorAll('input[type="checkbox"]:checked'))
+            .map(cb => cb.value)
+            .join(',');
+
         const config = {
             expedition: {
                 enabled: expToggle.checked,
                 ships: ships,
                 coords: expCoords.value,
+                origins: selectedOrigins,
                 randomSystem: randomSys.checked,
                 randomRange: parseInt(randomRange.value) || 0,
                 autoRecycle: autoRecycle.checked

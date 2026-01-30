@@ -36,6 +36,11 @@ const SELECTORS = {
     events: {
         attack: '.attack_alert, #attack_alert',
         list: '#eventContent'
+    },
+    sidebar: {
+        planets: '#planetList .smallplanet',
+        coords: '.planet-koords',
+        moon: '.moonlink'
     }
 };
 
@@ -162,6 +167,70 @@ class ResearchManager {
 }
 
 /**
+ * Gerenciador de Origens (Troca de Planetas/Luas)
+ */
+class OriginManager {
+    static async getCurrentCoords() {
+        const activePlanet = document.querySelector('.smallplanet .planetlink.active, .smallplanet .moonlink.active');
+        if (!activePlanet) return "";
+
+        const coordEl = activePlanet.closest('.smallplanet').querySelector(SELECTORS.sidebar.coords);
+        const isMoon = activePlanet.classList.contains('moonlink');
+        return coordEl ? `${coordEl.textContent.trim()}[${isMoon ? 'M' : 'P'}]` : "";
+    }
+
+    static async scanOrigins() {
+        const planets = document.querySelectorAll(SELECTORS.sidebar.planets);
+        const detected = [];
+
+        planets.forEach(p => {
+            const coordEl = p.querySelector(SELECTORS.sidebar.coords);
+            const nameEl = p.querySelector('.planet-name');
+            if (coordEl) {
+                // Limpar coordenadas: remove '[', ']' e espaços
+                const coords = coordEl.textContent.trim().replace(/[\[\]]/g, '');
+                const name = nameEl ? nameEl.textContent.trim() : "Planeta";
+                detected.push({ id: `${coords}[P]`, name: name, type: 'P' });
+
+                const moon = p.querySelector(SELECTORS.sidebar.moon);
+                if (moon) {
+                    detected.push({ id: `${coords}[M]`, name: `Lua (${name})`, type: 'M' });
+                }
+            }
+        });
+
+        if (detected.length > 0) {
+            await chrome.storage.local.set({ detectedOrigins: detected });
+            console.log(`[Bot] ${detected.length} origens detectadas:`, detected);
+        } else {
+            console.log("[Bot] Nenhuma origem detectada na barra lateral. Verifique se o seletor está correto.");
+        }
+    }
+
+    static async switchTo(targetCoordStr) {
+        console.log(`[Bot] Tentando trocar para origem: ${targetCoordStr}`);
+        const planets = document.querySelectorAll(SELECTORS.sidebar.planets);
+
+        for (const p of planets) {
+            const coordEl = p.querySelector(SELECTORS.sidebar.coords);
+            if (coordEl) {
+                const currentCoords = coordEl.textContent.trim().replace(/[\[\]]/g, '');
+                if (targetCoordStr.includes(currentCoords)) {
+                    const isMoonTarget = targetCoordStr.includes('[M]');
+                    const link = isMoonTarget ? p.querySelector(SELECTORS.sidebar.moon) : p.querySelector('.planetlink');
+
+                    if (link) {
+                        Utils.safeClick(link);
+                        return true;
+                    }
+                }
+            }
+        }
+        return false;
+    }
+}
+
+/**
  * Lógica de Fluxo de Frota (State Machine)
  */
 class FleetAutomation {
@@ -192,9 +261,12 @@ class FleetAutomation {
             if (shipsSelected) {
                 await Utils.wait(1000);
                 Utils.safeClick(document.querySelector(SELECTORS.fleet.continueBtn));
+                return true;
+            } else {
+                console.log("[Bot] Sem naves configuradas disponíveis nesta origem.");
+                return false;
             }
         }
-
         // Etapa 2: Coordenadas
         else if (document.querySelector('#fleet2')) {
             console.log("[Bot] Etapa 2: Definindo coordenadas...");
@@ -254,6 +326,7 @@ class FleetAutomation {
                 // Utils.safeClick(sendBtn); // Mantido comentado para segurança educacional
             }
         }
+        return true;
     }
 }
 
@@ -268,14 +341,42 @@ class ExpeditionBot {
     async run() {
         if (!this.config.enabled) return;
 
-        // Se não estiver na página de frotas, navega até lá
-        if (!window.location.href.includes('fleetdispatch')) {
-            console.log("[Bot] Navegando para frota...");
-            Utils.safeClick(document.querySelector(SELECTORS.fleet.tab));
-            return;
-        }
+        // 1. Verificar Origens
+        const origins = (this.config.origins || "").split(',').map(o => o.trim()).filter(o => o);
 
-        await FleetAutomation.handleFleetFlow(this.config);
+        if (origins.length > 0) {
+            const data = await chrome.storage.local.get('originIndex');
+            let idx = data.originIndex || 0;
+            if (idx >= origins.length) idx = 0;
+
+            const current = await OriginManager.getCurrentCoords();
+            const target = origins[idx];
+
+            if (current && !target.includes(current)) {
+                const switched = await OriginManager.switchTo(target);
+                if (switched) {
+                    console.log(`[Bot] Trocando para origem configurada: ${target}`);
+                    return; // Aguarda reload
+                }
+            }
+
+            // Se chegou aqui, está na origem correta. Tenta enviar.
+            const status = await FleetAutomation.handleFleetFlow(this.config);
+
+            // Se falhou (ex: sem naves), pula para a próxima origem no próximo ciclo
+            if (status === false || (status === true && document.querySelector('#fleet3'))) {
+                const nextIdx = (idx + 1) % origins.length;
+                await chrome.storage.local.set({ originIndex: nextIdx });
+                console.log(`[Bot] Ciclo concluído/impossível nesta origem. Próxima: ${origins[nextIdx]}`);
+            }
+        } else {
+            // Comportamento padrão (origem atual)
+            if (!window.location.href.includes('fleetdispatch')) {
+                Utils.safeClick(document.querySelector(SELECTORS.fleet.tab));
+                return;
+            }
+            await FleetAutomation.handleFleetFlow(this.config);
+        }
     }
 }
 
@@ -330,9 +431,15 @@ class RecycleBot {
         const monitor = new AttackMonitor();
         monitor.init();
 
+        // Escanear origens imediatamente
+        await OriginManager.scanOrigins();
+
         // Loop de Rotina de 1 minuto
         setInterval(async () => {
             console.log("[Bot] Rodando ciclo de verificação...");
+
+            // Escanear origens para o popup
+            await OriginManager.scanOrigins();
 
             if (config.expedition && config.expedition.enabled) {
                 await new ExpeditionBot(config.expedition).run();
