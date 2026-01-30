@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OGame Bot Config</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+    <div class="container">
+        <header>
+            <h1>OGame Automation</h1>
+            <p class="subtitle">Módulo Educacional v1.0</p>
+        </header>
+
+        <main>
+            <section class="module-card">
+                <div class="header-row">
+                    <h2>Auto-Expedição</h2>
+                    <label class="switch">
+                        <input type="checkbox" id="expedition-toggle">
+                        <span class="slider round"></span>
+                    </label>
+                </div>
+                <div class="config-details">
+                    <h3>Frota Civil</h3>
+                    <div class="ship-grid">
+                        <div class="ship-input-group"><label title="Cargueiro Pequeno">📦 CP:</label><input
+                                type="number" id="ships-sc" min="0" placeholder="0"></div>
+                        <div class="ship-input-group"><label title="Cargueiro Grande">🚚 CG:</label><input type="number"
+                                id="ships-lc" min="0" placeholder="0"></div>
+                        <div class="ship-input-group"><label title="Colonizador">🌍 CL:</label><input type="number"
+                                id="ships-cs" min="0" placeholder="0"></div>
+                        <div class="ship-input-group"><label title="Reciclador">♻️ RC:</label><input type="number"
+                                id="ships-rec" min="0" placeholder="0"></div>
+                        <div class="ship-input-group"><label title="Sonda de Espionagem">🛰️ SE:</label><input
+                                type="number" id="ships-ep" min="0" placeholder="0"></div>
+                    </div>
+
+                    <h3>Frota de Combate</h3>
+                    <div class="ship-grid">
+                        <div class="ship-input-group"><label title="Caça Ligeiro">🔫 CL:</label><input type="number"
+                                id="ships-lf" min="0" placeholder="0"></div>
+                        <div class="ship-input-group"><label title="Caça Pesado">🛡️ CP:</label><input type="number"
+                                id="ships-hf" min="0" placeholder="0"></div>
+                        <div class="ship-input-group"><label title="Cruzador">⚔️ CR:</label><input type="number"
+                                id="ships-cr" min="0" placeholder="0"></div>
+                        <div class="ship-input-group"><label title="Nave de Batalha">🚢 NB:</label><input type="number"
+                                id="ships-bs" min="0" placeholder="0"></div>
+                        <div class="ship-input-group"><label title="Interceptor">🔻 IC:</label><input type="number"
+                                id="ships-bc" min="0" placeholder="0"></div>
+                        <div class="ship-input-group"><label title="Bombardeiro">💣 BO:</label><input type="number"
+                                id="ships-bom" min="0" placeholder="0"></div>
+                        <div class="ship-input-group"><label title="Destruidor">💥 DE:</label><input type="number"
+                                id="ships-des" min="0" placeholder="0"></div>
+                        <div class="ship-input-group"><label title="Estrela da Morte">🌟 ED:</label><input type="number"
+                                id="ships-ds" min="0" placeholder="0"></div>
+                        <div class="ship-input-group"><label title="Ceifeira">💀 CE:</label><input type="number"
+                                id="ships-rea" min="0" placeholder="0"></div>
+                        <div class="ship-input-group"><label title="Explorador">🚀 EX:</label><input type="number"
+                                id="ships-pf" min="0" placeholder="0"></div>
+                    </div>
+
+                    <h3>Coordenadas e Randomização</h3>
+                    <div class="coord-row">
+                        <input type="text" id="exp-coords" placeholder="1:123:16" class="coord-input"
+                            title="Coordenada Base">
+                        <div class="random-group">
+                            <label class="checkbox-label">
+                                <input type="checkbox" id="random-system"> Rand?
+                            </label>
+                            <input type="number" id="random-range" min="0" max="499" placeholder="Intervalo"
+                                title="Sistemas para cima/baixo" style="width: 60px;">
+                        </div>
+                    </div>
+
+                    <div class="option-row">
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="auto-recycle"> ♻️ Reciclar Destroços?
+                        </label>
+                    </div>
+                </div>
+            </section>
+
+            <section class="module-card">
+                <div class="header-row">
+                    <h2>Produção Automatizada</h2>
+                    <label class="switch">
+                        <input type="checkbox" id="production-toggle">
+                        <span class="slider round"></span>
+                    </label>
+                </div>
+                <p class="info">Prioriza naves e edifícios conforme fila configurada.</p>
+            </section>
+
+            <section class="module-card">
+                <div class="header-row">
+                    <h2>Pesquisas</h2>
+                    <label class="switch">
+                        <input type="checkbox" id="research-toggle">
+                        <span class="slider round"></span>
+                    </label>
+                </div>
+            </section>
+
+            <section class="module-card warning">
+                <div class="header-row">
+                    <h2>Alertas de Ataque</h2>
+                    <span class="status-indicator active">Monitorando</span>
+                </div>
+            </section>
+        </main>
+
+        <footer>
+            <button id="save-config" class="primary-btn">Salvar Configurações</button>
+            <div id="status-msg"></div>
+        </footer>
+    </div>
+    <script src="popup.js"></script>
+</body>
+
+</html>

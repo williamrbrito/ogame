@@ -1,0 +1,30 @@
+{
+  "manifest_version": 3,
+  "name": "OGame Educational Automation",
+  "version": "1.0.1",
+  "description": "Ferramenta modular e segura para automação educacional no OGame baseada em DOM.",
+  "permissions": [
+    "storage",
+    "alarms"
+  ],
+  "host_permissions": [
+    "https://*.ogame.gameforge.com/*"
+  ],
+  "action": {
+    "default_popup": "popup.html"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://*.ogame.gameforge.com/*"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ]
+}
