@@ -28,9 +28,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Função para renderizar lista de origens
     const renderOrigins = (detected, selectedStr) => {
-        if (!detected || detected.length === 0) return;
         originListContainer.innerHTML = '';
         const selected = selectedStr ? selectedStr.split(',') : [];
+
+        if (!detected || detected.length === 0) {
+            originListContainer.innerHTML = '<p class="info" style="font-size: 0.7rem; color: #f85149;">Nenhuma origem detectada. Abra o jogo!</p>';
+            return;
+        }
 
         detected.forEach(item => {
             const div = document.createElement('div');

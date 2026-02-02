@@ -10,12 +10,15 @@ const SELECTORS = {
     fleet: {
         tab: 'a[href*="page=ingame&component=fleetdispatch"]',
         ships: '.ship-item',
-        continueBtn: '#continueToStep2, #continueToStep3',
-        sendBtn: '#sendFleet',
+        continueTo2: '#continueToStep2, #continueToFleet2',
+        continueTo3: '#continueToStep3, #continueToFleet3',
+        sendBtn: '#sendFleet, .btn_blue.sendFleet, button.sendFleet',
         coordG: 'input[name="galaxy"]',
         coordS: 'input[name="system"]',
         coordP: 'input[name="position"]',
-        targetDebris: '#pbtn_2, .debris-field',
+        targetPlanet: '#pbtn_1',
+        targetDebris: '#pbtn_2',
+        targetMoon: '#pbtn_3',
         missionExp: '#missionExpedition',
         missionRec: '#missionRecycle'
     },
@@ -84,15 +87,25 @@ const Utils = {
     wait: (ms) => new Promise(resolve => setTimeout(resolve, ms)),
     randomRange: (min, max) => Math.floor(Math.random() * (max - min + 1) + min),
 
-    // Simula clique real
+    // Simula clique real com fallback
     safeClick(element) {
         if (!element) return;
-        const event = new MouseEvent('click', {
-            view: window,
-            bubbles: true,
-            cancelable: true
-        });
-        element.dispatchEvent(event);
+        try {
+            // Tenta clique nativo do elemento primeiro
+            if (typeof element.click === 'function') {
+                element.click();
+            }
+
+            // Dispara evento de mouse para garantir triggers de listeners externos
+            const event = new MouseEvent('click', {
+                view: window,
+                bubbles: true,
+                cancelable: true
+            });
+            element.dispatchEvent(event);
+        } catch (e) {
+            console.warn("[Bot] Erro ao clicar no elemento:", e);
+        }
     }
 };
 
@@ -102,6 +115,7 @@ const Utils = {
 class AttackMonitor {
     constructor() {
         this.observer = null;
+        this.lastAlertState = false;
     }
 
     init() {
@@ -113,12 +127,17 @@ class AttackMonitor {
 
     check() {
         const alert = document.querySelector(SELECTORS.events.attack);
-        // Verifica se o elemento existe e é visível/ativo no DOM
-        if (alert && (alert.classList.contains('active') || alert.offsetParent !== null)) {
+        if (alert && alert.classList.contains('alert') && alert.offsetParent !== null) {
+            if (this.lastAlertState === true) return;
+            this.lastAlertState = true;
+
+            console.log("[Bot] ALERTA DE ATAQUE CONFIRMADO!");
             chrome.runtime.sendMessage({
                 type: "DETECTION_ATTACK",
-                message: "Possível ataque detectado visualmente no menu superior!"
+                message: "ATAQUE REAL DETECTADO! O ícone de alerta no menu superior está ativo."
             });
+        } else {
+            this.lastAlertState = false;
         }
     }
 }
@@ -137,7 +156,6 @@ class ProductionManager {
 
         // Simulação: Navegar até o estaleiro
         if (!window.location.href.includes('shipyard') && !window.location.href.includes('defenses')) {
-            // Apenas registra a intenção. Em um bot real, clicaria no menu.
             return;
         }
 
@@ -145,7 +163,6 @@ class ProductionManager {
         const buildBtns = document.querySelectorAll(SELECTORS.production.buildBtn);
         if (buildBtns.length > 0) {
             console.log("[Bot] Iniciando produção de item disponível...");
-            // Utils.safeClick(buildBtns[0]); // Comentado para segurança educacional
         }
     }
 }
@@ -162,7 +179,6 @@ class ResearchManager {
         if (active) return;
 
         console.log("[Bot] Verificando novas pesquisas...");
-        // Lógica similar à produção
     }
 }
 
@@ -176,7 +192,10 @@ class OriginManager {
 
         const coordEl = activePlanet.closest('.smallplanet').querySelector(SELECTORS.sidebar.coords);
         const isMoon = activePlanet.classList.contains('moonlink');
-        return coordEl ? `${coordEl.textContent.trim()}[${isMoon ? 'M' : 'P'}]` : "";
+
+        if (!coordEl) return "";
+        const coords = coordEl.textContent.trim().replace(/[\[\]]/g, '');
+        return `${coords}[${isMoon ? 'M' : 'P'}]`;
     }
 
     static async scanOrigins() {
@@ -187,7 +206,6 @@ class OriginManager {
             const coordEl = p.querySelector(SELECTORS.sidebar.coords);
             const nameEl = p.querySelector('.planet-name');
             if (coordEl) {
-                // Limpar coordenadas: remove '[', ']' e espaços
                 const coords = coordEl.textContent.trim().replace(/[\[\]]/g, '');
                 const name = nameEl ? nameEl.textContent.trim() : "Planeta";
                 detected.push({ id: `${coords}[P]`, name: name, type: 'P' });
@@ -203,7 +221,7 @@ class OriginManager {
             await chrome.storage.local.set({ detectedOrigins: detected });
             console.log(`[Bot] ${detected.length} origens detectadas:`, detected);
         } else {
-            console.log("[Bot] Nenhuma origem detectada na barra lateral. Verifique se o seletor está correto.");
+            console.log("[Bot] Nenhuma origem detectada na barra lateral.");
         }
     }
 
@@ -236,94 +254,186 @@ class OriginManager {
 class FleetAutomation {
     static async handleFleetFlow(config, isRecycle = false) {
         const url = window.location.href;
+        const f1 = document.querySelector('#fleet1');
+        const f2 = document.querySelector('#fleet2');
+        const f3 = document.querySelector('#fleet3');
 
         // Etapa 1: Seleção de Naves
-        if (url.includes('component=fleetdispatch') && !document.querySelector('#fleet2')) {
+        if (url.includes('component=fleetdispatch') && ((f1 && f1.offsetParent !== null) || (!f2 || f2.offsetParent === null))) {
             console.log("[Bot] Etapa 1: Selecionando naves...");
 
             const ships = isRecycle ? { pf: (config.ships?.pf || 1) } : (config.ships || {});
-            let shipsSelected = false;
+            console.log("[Bot] Inventário configurado:", JSON.stringify(ships));
+
+            let anyShipSelected = false;
+            const shipItems = Array.from(document.querySelectorAll('.ship-item, li[data-technology]'));
 
             for (const [key, qty] of Object.entries(ships)) {
+                if (qty <= 0) continue;
+
                 const id = FleetUtils.SHIP_IDS[key];
-                const input = document.querySelector(`input[name="ship${id}"]`);
-                if (input) {
-                    const available = parseInt(input.getAttribute('data-available') || "0");
+                let item = shipItems.find(el =>
+                    el.getAttribute('data-technology') === id ||
+                    el.getAttribute('data-unit-id') === id ||
+                    el.classList.contains(`ship${id}`)
+                );
+
+                if (!item) {
+                    const inputFallback = document.querySelector(`input[id*="${id}"], input[name*="${id}"]`);
+                    item = inputFallback?.closest('.ship-item, li');
+                }
+
+                if (item) {
+                    const input = item.querySelector('input') || document.querySelector(`input[name="am${id}"]`);
+                    const availableRaw = item.getAttribute('data-available') ||
+                        item.getAttribute('data-amount') ||
+                        item.querySelector('.amount')?.getAttribute('data-value') ||
+                        item.querySelector('.amount')?.innerText ||
+                        item.querySelector('.count')?.innerText ||
+                        input?.getAttribute('data-available') ||
+                        "0";
+
+                    let available = 0;
+                    const cleanStr = availableRaw.toString().toLowerCase().trim();
+                    if (cleanStr.includes('k')) available = parseFloat(cleanStr.replace('k', '')) * 1000;
+                    else if (cleanStr.includes('m')) available = parseFloat(cleanStr.replace('m', '')) * 1000000;
+                    else available = parseInt(cleanStr.replace(/\D/g, '')) || 0;
+
                     const amount = Math.min(qty, available);
-                    if (amount > 0) {
+
+                    if (amount > 0 && input) {
+                        console.log(`[Bot] Nave ${key} (ID ${id}): selecionando ${amount}.`);
                         input.value = amount;
-                        input.dispatchEvent(new Event('input', { bubbles: true }));
-                        shipsSelected = true;
+                        ['input', 'change', 'keyup', 'blur'].forEach(ev => input.dispatchEvent(new Event(ev, { bubbles: true })));
+                        anyShipSelected = true;
                     }
                 }
             }
 
-            if (shipsSelected) {
+            if (anyShipSelected) {
+                console.log("[Bot] Seleção concluída. Avançando...");
                 await Utils.wait(1000);
-                Utils.safeClick(document.querySelector(SELECTORS.fleet.continueBtn));
-                return true;
+                let btn = document.querySelector(SELECTORS.fleet.continueTo2);
+                if (!btn || btn.offsetParent === null) {
+                    btn = Array.from(document.querySelectorAll('button, a, .btn_blue')).find(b => (b.innerText.toLowerCase().includes('próximo') || b.innerText.toLowerCase().includes('continuar')) && b.offsetParent !== null);
+                }
+                if (btn) {
+                    Utils.safeClick(btn);
+                    return true;
+                }
             } else {
-                console.log("[Bot] Sem naves configuradas disponíveis nesta origem.");
+                console.warn("[Bot] Nenhuma nave disponível.");
                 return false;
             }
         }
-        // Etapa 2: Coordenadas
-        else if (document.querySelector('#fleet2')) {
-            console.log("[Bot] Etapa 2: Definindo coordenadas...");
-            const coords = FleetUtils.parseCoords(config.coords);
 
-            const galaxyIn = document.querySelector(SELECTORS.fleet.coordG);
-            const systemIn = document.querySelector(SELECTORS.fleet.coordS);
-            const posIn = document.querySelector(SELECTORS.fleet.coordP);
+        // Lógica Unificada para Coordenadas, Missão e Envio (Etapas 2 e 3)
+        const isF2Visible = f2 && f2.offsetParent !== null;
+        const isF3Visible = f3 && f3.offsetParent !== null;
+
+        if (isF2Visible || isF3Visible) {
+            // 1. Processar Coordenadas (Sempre que F2 ou F3 estiverem minimamente presentes)
+            const galaxyIn = document.querySelector('#galaxy, input[name="galaxy"]');
+            const systemIn = document.querySelector('#system, input[name="system"]');
+            const posIn = document.querySelector('#position, input[name="position"]');
 
             if (galaxyIn && systemIn && posIn) {
-                galaxyIn.value = coords.g;
+                const coords = FleetUtils.parseCoords(config.coords);
+                const currentOrigin = await OriginManager.getCurrentCoords();
+                let bG = coords.g;
+                let bS = coords.s;
+                let bP = isRecycle ? coords.p : "16";
 
-                let targetSystem = parseInt(coords.s) || 1;
+                if ((!config.coords || config.coords === "1:1:16") && currentOrigin) {
+                    const parts = currentOrigin.split('[')[0].split(':');
+                    bG = parts[0]; bS = parts[1];
+                }
+
                 if (config.randomSystem) {
                     const delta = parseInt(config.randomRange) || 0;
-                    targetSystem = Utils.randomRange(
-                        Math.max(1, targetSystem - delta),
-                        Math.min(499, targetSystem + delta)
-                    );
-                }
-                systemIn.value = targetSystem;
-                posIn.value = coords.p;
-
-                galaxyIn.dispatchEvent(new Event('change', { bubbles: true }));
-                systemIn.dispatchEvent(new Event('change', { bubbles: true }));
-                posIn.dispatchEvent(new Event('change', { bubbles: true }));
-
-                // Se for reciclagem, selecionar alvo Destroços
-                if (isRecycle) {
-                    const debrisBtn = document.querySelector(SELECTORS.fleet.targetDebris);
-                    if (debrisBtn) Utils.safeClick(debrisBtn);
+                    bS = Utils.randomRange(Math.max(1, parseInt(bS) - delta), Math.min(499, parseInt(bS) + delta));
                 }
 
-                await Utils.wait(1000);
-                Utils.safeClick(document.querySelector(SELECTORS.fleet.continueBtn));
+                if (galaxyIn.value != bG || systemIn.value != bS || posIn.value != bP) {
+                    console.log(`[Bot] Ajustando alvo: ${bG}:${bS}:${bP}`);
+                    galaxyIn.value = bG;
+                    systemIn.value = bS;
+                    posIn.value = bP;
+                    [galaxyIn, systemIn, posIn].forEach(el => {
+                        el.dispatchEvent(new Event('input', { bubbles: true }));
+                        el.dispatchEvent(new Event('change', { bubbles: true }));
+                    });
+
+                    // Forçar Tipo de Alvo (Planeta para Expedição, Destroços para Reciclar)
+                    const targetBtn = document.querySelector(isRecycle ? SELECTORS.fleet.targetDebris : SELECTORS.fleet.targetPlanet);
+                    if (targetBtn) {
+                        console.log(`[Bot] Forçando tipo de alvo: ${isRecycle ? 'Destroços' : 'Planeta'}`);
+                        Utils.safeClick(targetBtn);
+                    }
+
+                    await Utils.wait(1200);
+                }
             }
-        }
 
-        // Etapa 3: Missão e Envio
-        else if (document.querySelector('#fleet3')) {
-            console.log("[Bot] Etapa 3: Selecionando missão e enviando...");
-
-            const expMission = document.querySelector(SELECTORS.fleet.missionExp);
-            const recycleMission = document.querySelector(SELECTORS.fleet.missionRec); // Alvo destroços
-
-            if (isRecycle) {
-                if (recycleMission) Utils.safeClick(recycleMission);
-                else if (expMission) Utils.safeClick(expMission);
-            } else {
-                if (expMission) Utils.safeClick(expMission);
+            // 2. Transição Etapa 2 -> 3
+            if (isF2Visible && !isF3Visible) {
+                let btn = document.querySelector(SELECTORS.fleet.continueTo3);
+                if (!btn || btn.offsetParent === null) {
+                    btn = Array.from(document.querySelectorAll('button, a, .btn_blue')).find(b => (b.innerText.toLowerCase().includes('próximo') || b.innerText.toLowerCase().includes('continuar')) && b.offsetParent !== null && !b.id.includes('Step2'));
+                }
+                if (btn) {
+                    console.log("[Bot] Avançando para Missão...");
+                    Utils.safeClick(btn);
+                    return true;
+                }
             }
 
-            await Utils.wait(1200);
-            const sendBtn = document.querySelector(SELECTORS.fleet.sendBtn);
-            if (sendBtn) {
-                console.log("[Bot] MISSÃO PRONTA PARA ENVIO!");
-                // Utils.safeClick(sendBtn); // Mantido comentado para segurança educacional
+            // 3. Processar Missão e Envio Final (Etapa 3)
+            if (isF3Visible) {
+                console.log("[Bot] Verificando Missão...");
+                const mID = isRecycle ? "8" : "15"; // Exp=15, Rec=8
+                const missionSelectors = [
+                    `#mission${mID}`, `li[data-mission-id="${mID}"]`, `a[data-mission-id="${mID}"]`,
+                    `.mission_item[data-mission-id="${mID}"]`, `#mission${isRecycle ? 'Recycle' : 'Expedition'}`
+                ];
+
+                let mBtn = null;
+                for (const s of missionSelectors) {
+                    mBtn = document.querySelector(s);
+                    if (mBtn && mBtn.offsetParent !== null) break;
+                }
+
+                if (!mBtn) {
+                    const term = isRecycle ? 'reciclar' : 'expedição';
+                    mBtn = Array.from(document.querySelectorAll('a, li, button')).find(el => el.innerText.toLowerCase().includes(term) && el.offsetParent !== null);
+                }
+
+                if (mBtn) {
+                    const isSelected = mBtn.classList.contains('selected') ||
+                        mBtn.classList.contains('active') ||
+                        mBtn.classList.contains('on') ||
+                        !!mBtn.querySelector('.selected, .active, .on');
+                    if (!isSelected) {
+                        console.log(`[Bot] Selecionando missão ${isRecycle ? 'Reciclar' : 'Expedição'}...`);
+                        Utils.safeClick(mBtn);
+                        await Utils.wait(1500);
+                    }
+                }
+
+                let sendBtn = document.querySelector(SELECTORS.fleet.sendBtn);
+                if (!sendBtn || sendBtn.offsetParent === null) {
+                    const terms = ['enviar', 'fleet', 'enviar frota', 'mande', 'fly'];
+                    sendBtn = Array.from(document.querySelectorAll('button, a, .btn_blue')).find(el => {
+                        const t = (el.innerText || el.textContent || el.value || "").toLowerCase();
+                        return terms.some(term => t.includes(term)) && el.offsetParent !== null;
+                    });
+                }
+
+                if (sendBtn && !sendBtn.classList.contains('disabled') && !sendBtn.classList.contains('off')) {
+                    console.log("[Bot] TUDO PRONTO! ENVIANDO AGORA...");
+                    Utils.safeClick(sendBtn);
+                    return "SENT";
+                }
             }
         }
         return true;
@@ -331,46 +441,42 @@ class FleetAutomation {
 }
 
 /**
- * Lógica Principal da Expedição Expandida
+ * Lógica Principal da Expedição
  */
 class ExpeditionBot {
-    constructor(config) {
-        this.config = config;
-    }
+    constructor(config) { this.config = config; }
 
     async run() {
         if (!this.config.enabled) return;
-
-        // 1. Verificar Origens
         const origins = (this.config.origins || "").split(',').map(o => o.trim()).filter(o => o);
-
         if (origins.length > 0) {
-            const data = await chrome.storage.local.get('originIndex');
-            let idx = data.originIndex || 0;
+            const storage = await chrome.storage.local.get('originIndex');
+            let idx = storage.originIndex || 0;
             if (idx >= origins.length) idx = 0;
 
-            const current = await OriginManager.getCurrentCoords();
-            const target = origins[idx];
+            const currentCoords = await OriginManager.getCurrentCoords();
+            const targetOriginCoords = origins[idx];
 
-            if (current && !target.includes(current)) {
-                const switched = await OriginManager.switchTo(target);
-                if (switched) {
-                    console.log(`[Bot] Trocando para origem configurada: ${target}`);
-                    return; // Aguarda reload
-                }
+            if (currentCoords && !targetOriginCoords.includes(currentCoords)) {
+                console.log(`[Bot] Mudando para : ${targetOriginCoords}`);
+                if (await OriginManager.switchTo(targetOriginCoords)) return;
             }
 
-            // Se chegou aqui, está na origem correta. Tenta enviar.
-            const status = await FleetAutomation.handleFleetFlow(this.config);
+            if (!window.location.href.includes('fleetdispatch')) {
+                Utils.safeClick(document.querySelector(SELECTORS.fleet.tab));
+                return;
+            }
 
-            // Se falhou (ex: sem naves), pula para a próxima origem no próximo ciclo
-            if (status === false || (status === true && document.querySelector('#fleet3'))) {
+            const status = await FleetAutomation.handleFleetFlow(this.config);
+            if (status === "SENT" || status === false) {
                 const nextIdx = (idx + 1) % origins.length;
                 await chrome.storage.local.set({ originIndex: nextIdx });
-                console.log(`[Bot] Ciclo concluído/impossível nesta origem. Próxima: ${origins[nextIdx]}`);
+                if (status === "SENT") {
+                    await Utils.wait(3000);
+                    await OriginManager.switchTo(origins[nextIdx]);
+                }
             }
         } else {
-            // Comportamento padrão (origem atual)
             if (!window.location.href.includes('fleetdispatch')) {
                 Utils.safeClick(document.querySelector(SELECTORS.fleet.tab));
                 return;
@@ -384,22 +490,14 @@ class ExpeditionBot {
  * Monitor de Combate e Reciclagem
  */
 class RecycleBot {
-    constructor(config) {
-        this.config = config;
-        this.lastCombatMsg = "";
-    }
+    constructor(config) { this.config = config; this.lastCombatMsg = ""; }
 
     async check() {
         if (!this.config.enabled || !this.config.autoRecycle) return;
-
         const eventList = document.querySelector(SELECTORS.events.list);
         if (eventList) {
-            const combatEvent = Array.from(eventList.querySelectorAll('.eventFleet')).find(el =>
-                el.textContent.toLowerCase().includes('combate')
-            );
-
+            const combatEvent = Array.from(eventList.querySelectorAll('.eventFleet')).find(el => el.textContent.toLowerCase().includes('combate'));
             if (combatEvent && combatEvent.textContent !== this.lastCombatMsg) {
-                console.log("[Bot] Novo combate detectado! Iniciando reciclagem...");
                 this.lastCombatMsg = combatEvent.textContent;
                 this.initiateRecycle();
             }
@@ -408,7 +506,6 @@ class RecycleBot {
 
     async initiateRecycle() {
         if (!window.location.href.includes('fleetdispatch')) {
-            console.log("[Bot] Navegando para frota para reciclar...");
             Utils.safeClick(document.querySelector(SELECTORS.fleet.tab));
             return;
         }
@@ -416,46 +513,22 @@ class RecycleBot {
     }
 }
 
-// Inicialização Centralizada
 (async () => {
     try {
-        const data = await chrome.storage.local.get('config');
-        const config = data.config;
-
-        if (!config) {
-            console.log("[Bot] Configurações não encontradas.");
-            return;
-        }
-
-        // Iniciar Monitor de Ataques (Sempre ativo se a extensão estiver rodando)
         const monitor = new AttackMonitor();
         monitor.init();
-
-        // Escanear origens imediatamente
         await OriginManager.scanOrigins();
 
-        // Loop de Rotina de 1 minuto
         setInterval(async () => {
-            console.log("[Bot] Rodando ciclo de verificação...");
+            const storage = await chrome.storage.local.get('config');
+            const config = storage.config;
+            if (!config) return;
 
-            // Escanear origens para o popup
             await OriginManager.scanOrigins();
-
             if (config.expedition && config.expedition.enabled) {
                 await new ExpeditionBot(config.expedition).run();
                 await new RecycleBot(config.expedition).check();
             }
-
-            if (config.production && config.production.enabled) {
-                await ProductionManager.checkAndProduce(config.production);
-            }
-
-            if (config.research && config.research.enabled) {
-                await ResearchManager.checkAndResearch(config.research);
-            }
         }, 60000);
-
-    } catch (e) {
-        console.error("[Bot] Falha na inicialização:", e);
-    }
+    } catch (e) { console.error("[Bot] Erro:", e); }
 })();
