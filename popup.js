@@ -26,6 +26,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const prodToggle = document.getElementById('production-toggle');
     const resToggle = document.getElementById('research-toggle');
 
+    const minDelay = document.getElementById('min-delay');
+    const maxDelay = document.getElementById('max-delay');
+
     // Função para renderizar lista de origens
     const renderOrigins = (detected, selectedStr) => {
         originListContainer.innerHTML = '';
@@ -77,6 +80,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
         prodToggle.checked = c.production?.enabled || false;
         resToggle.checked = c.research?.enabled || false;
+
+        minDelay.value = exp.minDelay || 1000;
+        maxDelay.value = exp.maxDelay || 3000;
     });
 
     // Escutar mudanças no storage (para atualizar origens se o scan completar com popup aberto)
@@ -109,7 +115,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 origins: selectedOrigins,
                 randomSystem: randomSys.checked,
                 randomRange: parseInt(randomRange.value) || 0,
-                autoRecycle: autoRecycle.checked
+                autoRecycle: autoRecycle.checked,
+                minDelay: parseInt(minDelay.value) || 1000,
+                maxDelay: parseInt(maxDelay.value) || 3000
             },
             production: {
                 enabled: prodToggle.checked

@@ -91,12 +91,9 @@ const Utils = {
     safeClick(element) {
         if (!element) return;
         try {
-            // Tenta clique nativo do elemento primeiro
             if (typeof element.click === 'function') {
                 element.click();
             }
-
-            // Dispara evento de mouse para garantir triggers de listeners externos
             const event = new MouseEvent('click', {
                 view: window,
                 bubbles: true,
@@ -106,6 +103,14 @@ const Utils = {
         } catch (e) {
             console.warn("[Bot] Erro ao clicar no elemento:", e);
         }
+    },
+
+    async humanWait(config) {
+        const min = config.minDelay || 1000;
+        const max = config.maxDelay || 3000;
+        const delay = Math.floor(Math.random() * (max - min + 1) + min);
+        console.log(`[Bot] Espera humana: ${delay}ms`);
+        return this.wait(delay);
     }
 };
 
@@ -311,13 +316,14 @@ class FleetAutomation {
             }
 
             if (anyShipSelected) {
-                console.log("[Bot] Seleção concluída. Avançando...");
-                await Utils.wait(1000);
+                console.log("[Bot] Seleção concluída. Aguardando cronômetro para avançar...");
+                await Utils.humanWait(config);
                 let btn = document.querySelector(SELECTORS.fleet.continueTo2);
                 if (!btn || btn.offsetParent === null) {
                     btn = Array.from(document.querySelectorAll('button, a, .btn_blue')).find(b => (b.innerText.toLowerCase().includes('próximo') || b.innerText.toLowerCase().includes('continuar')) && b.offsetParent !== null);
                 }
                 if (btn) {
+                    console.log("[Bot] Clicando em Próximo (Passo 2)...");
                     Utils.safeClick(btn);
                     return true;
                 }
@@ -360,18 +366,25 @@ class FleetAutomation {
                     systemIn.value = bS;
                     posIn.value = bP;
                     [galaxyIn, systemIn, posIn].forEach(el => {
-                        el.dispatchEvent(new Event('input', { bubbles: true }));
-                        el.dispatchEvent(new Event('change', { bubbles: true }));
+                        ['input', 'change', 'keyup', 'blur'].forEach(ev => el.dispatchEvent(new Event(ev, { bubbles: true })));
                     });
+                    await Utils.humanWait(config);
+                }
 
-                    // Forçar Tipo de Alvo (Planeta para Expedição, Destroços para Reciclar)
-                    const targetBtn = document.querySelector(isRecycle ? SELECTORS.fleet.targetDebris : SELECTORS.fleet.targetPlanet);
-                    if (targetBtn) {
-                        console.log(`[Bot] Forçando tipo de alvo: ${isRecycle ? 'Destroços' : 'Planeta'}`);
-                        Utils.safeClick(targetBtn);
-                    }
+                // GARANTIR TIPO DE ALVO (Independente se as coordenadas mudaram ou não)
+                const targetBtnSelector = isRecycle ? SELECTORS.fleet.targetDebris : SELECTORS.fleet.targetPlanet;
+                const targetBtn = document.querySelector(targetBtnSelector);
 
-                    await Utils.wait(1200);
+                // Verifica se já está selecionado para evitar cliques redundantes (Verificação tripla)
+                const isTargetSelected = targetBtn?.classList.contains('selected') ||
+                    targetBtn?.classList.contains('active') ||
+                    targetBtn?.classList.contains('on') ||
+                    !!targetBtn?.querySelector('.selected, .active, .on');
+
+                if (targetBtn && !isTargetSelected) {
+                    console.log(`[Bot] Forçando tipo de alvo: ${isRecycle ? 'Destroços' : 'Planeta'}`);
+                    Utils.safeClick(targetBtn);
+                    await Utils.humanWait(config);
                 }
             }
 
@@ -382,7 +395,8 @@ class FleetAutomation {
                     btn = Array.from(document.querySelectorAll('button, a, .btn_blue')).find(b => (b.innerText.toLowerCase().includes('próximo') || b.innerText.toLowerCase().includes('continuar')) && b.offsetParent !== null && !b.id.includes('Step2'));
                 }
                 if (btn) {
-                    console.log("[Bot] Avançando para Missão...");
+                    console.log("[Bot] Alvo configurado. Aguardando cronômetro para Missão...");
+                    await Utils.humanWait(config);
                     Utils.safeClick(btn);
                     return true;
                 }
@@ -404,8 +418,11 @@ class FleetAutomation {
                 }
 
                 if (!mBtn) {
-                    const term = isRecycle ? 'reciclar' : 'expedição';
-                    mBtn = Array.from(document.querySelectorAll('a, li, button')).find(el => el.innerText.toLowerCase().includes(term) && el.offsetParent !== null);
+                    const terms = isRecycle ? ['reciclar', 'recycle', 'reci'] : ['expedição', 'explorar', 'expedition', 'expe', 'explo'];
+                    mBtn = Array.from(document.querySelectorAll('a, li, button')).find(el => {
+                        const txt = (el.innerText || el.textContent || "").toLowerCase();
+                        return terms.some(t => txt.includes(t)) && el.offsetParent !== null;
+                    });
                 }
 
                 if (mBtn) {
@@ -416,7 +433,7 @@ class FleetAutomation {
                     if (!isSelected) {
                         console.log(`[Bot] Selecionando missão ${isRecycle ? 'Reciclar' : 'Expedição'}...`);
                         Utils.safeClick(mBtn);
-                        await Utils.wait(1500);
+                        await Utils.humanWait(config);
                     }
                 }
 
@@ -430,9 +447,12 @@ class FleetAutomation {
                 }
 
                 if (sendBtn && !sendBtn.classList.contains('disabled') && !sendBtn.classList.contains('off')) {
-                    console.log("[Bot] TUDO PRONTO! ENVIANDO AGORA...");
+                    console.log("[Bot] CONDIÇÕES OK! ENVIANDO AGORA...");
                     Utils.safeClick(sendBtn);
+                    await Utils.wait(2000); // Espera o jogo processar o comando de saída
                     return "SENT";
+                } else if (sendBtn) {
+                    console.log("[Bot] Botão de envio detectado, mas desabilitado. Aguardando...");
                 }
             }
         }
@@ -463,7 +483,9 @@ class ExpeditionBot {
             }
 
             if (!window.location.href.includes('fleetdispatch')) {
+                console.log("[Bot] Navegando para Frota... Aguardando cronômetro inicial.");
                 Utils.safeClick(document.querySelector(SELECTORS.fleet.tab));
+                await Utils.humanWait(this.config);
                 return;
             }
 
@@ -478,7 +500,9 @@ class ExpeditionBot {
             }
         } else {
             if (!window.location.href.includes('fleetdispatch')) {
+                console.log("[Bot] Navegando para Frota... Aguardando cronômetro inicial.");
                 Utils.safeClick(document.querySelector(SELECTORS.fleet.tab));
+                await Utils.humanWait(this.config);
                 return;
             }
             await FleetAutomation.handleFleetFlow(this.config);
